@@ -12,5 +12,5 @@ target_include_directories(app PRIVATE ${CMAKE_SOURCE_DIR})
 
 target_sources(app
         PRIVATE
-        app.c # or app.cpp
+        app.cpp # or app.c
 )
