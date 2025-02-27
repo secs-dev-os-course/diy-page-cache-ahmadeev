@@ -13,7 +13,7 @@
 #include <iostream>
 
 #define BLOCK_SIZE 4096       // Размер блока (4 КБ)
-#define CACHE_CAPACITY 256    // Максимальное количество блоков в кэше (1 МБ суммарно)
+#define CACHE_CAPACITY 256 * 100  // Максимальное количество блоков в кэше (1 МБ суммарно)
 
 // Логирование
 #define DEBUG_LOG(message) /*std::cout << "[DEBUG] " << message << std::endl*/

@@ -82,7 +82,7 @@ const size_t TOTAL_SIZE = 100 * 1024 * 1024;       // 100 МБ
 const size_t NUM_BLOCKS = TOTAL_SIZE / BLOCK_SIZE;
 
 // Функция для бенчмарка с использованием кэширования ОС (стандартный вывод в файл)
-void benchmarkOSCache(const std::string &filename) {
+void benchmarkOSCacheWrite(const std::string &filename) {
     std::vector<char> buffer(BLOCK_SIZE, 'A'); // Заполняем буфер символами 'A'
 
     auto start = std::chrono::high_resolution_clock::now();
@@ -104,13 +104,13 @@ void benchmarkOSCache(const std::string &filename) {
 
     double durationSec = std::chrono::duration<double>(end - start).count();
     double throughputMBs = (TOTAL_SIZE / (1024.0 * 1024.0)) / durationSec;
-    std::cout << "[OS Cache] Записано " << (TOTAL_SIZE / (1024 * 1024)) << " МБ за "
+    std::cout << "[WRITE] [OS Cache] Записано " << (TOTAL_SIZE / (1024 * 1024)) << " МБ за "
               << durationSec << " сек. ("
               << throughputMBs << " МБ/с)" << std::endl;
 }
 
 // Функция для бенчмарка без кэширования ОС
-void benchmarkNoCache(const std::string &filename) {
+void benchmarkNoCacheWrite(const std::string &filename) {
 #ifdef _WIN32
     // Открытие файла с флагами для отключения кэширования
     HANDLE hFile = CreateFileA(filename.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
@@ -145,7 +145,7 @@ void benchmarkNoCache(const std::string &filename) {
 
     double durationSec = std::chrono::duration<double>(end - start).count();
     double throughputMBs = (TOTAL_SIZE / (1024.0 * 1024.0)) / durationSec;
-    std::cout << "[No Cache] Записано " << (TOTAL_SIZE / (1024 * 1024)) << " МБ за "
+    std::cout << "[WRITE] [No Cache] Записано " << (TOTAL_SIZE / (1024 * 1024)) << " МБ за "
               << durationSec << " сек. ("
               << throughputMBs << " МБ/с)" << std::endl;
 #else
@@ -154,7 +154,7 @@ void benchmarkNoCache(const std::string &filename) {
 }
 
 // Функция для бенчмарка с использованием кастомного кэша
-void benchmarkCustomCache(const std::string &filename) {
+void benchmarkCustomCacheWrite(const std::string &filename) {
     // Используем lab2_open для открытия файла
     int fd = lab2_open(filename.c_str());
     if (fd == -1) {
@@ -174,13 +174,150 @@ void benchmarkCustomCache(const std::string &filename) {
         // fix
         lab2_fsync(fd);
     }
-    // Если требуется синхронизация данных с диском, можно вызвать lab2_fsync(fd);
+    // можно вызвать lab2_fsync(fd);
     lab2_close(fd);
     auto end = std::chrono::high_resolution_clock::now();
 
     double durationSec = std::chrono::duration<double>(end - start).count();
     double throughputMBs = (TOTAL_SIZE / (1024.0 * 1024.0)) / durationSec;
-    std::cout << "[Custom Cache] Записано " << (TOTAL_SIZE / (1024 * 1024)) << " МБ за "
+    std::cout << "[WRITE] [Custom Cache] Записано " << (TOTAL_SIZE / (1024 * 1024)) << " МБ за "
+              << durationSec << " сек. ("
+              << throughputMBs << " МБ/с)" << std::endl;
+}
+
+void benchmarkOSCacheReWrite(const std::string &filename) {
+    std::vector<char> buffer(BLOCK_SIZE, 'A'); // Заполняем буфер символами 'A'
+
+    // Создаем файл и записываем начальные данные
+    {
+        std::ofstream ofs(filename, std::ios::binary);
+        for (size_t i = 0; i < NUM_BLOCKS; ++i) {
+            ofs.write(buffer.data(), BLOCK_SIZE);
+        }
+    }
+
+    // Перезапись данных
+    auto start = std::chrono::high_resolution_clock::now();
+    std::ofstream ofs(filename, std::ios::binary | std::ios::in | std::ios::out);
+    if (!ofs) {
+        std::cerr << "Ошибка открытия файла: " << filename << std::endl;
+        return;
+    }
+
+    for (size_t i = 0; i < NUM_BLOCKS; ++i) {
+        ofs.seekp(i * BLOCK_SIZE); // Перемещаем указатель записи
+        ofs.write(buffer.data(), BLOCK_SIZE);
+        if (!ofs) {
+            std::cerr << "Ошибка записи в файл." << std::endl;
+            break;
+        }
+    }
+    ofs.close();
+    auto end = std::chrono::high_resolution_clock::now();
+
+    double durationSec = std::chrono::duration<double>(end - start).count();
+    double throughputMBs = (TOTAL_SIZE / (1024.0 * 1024.0)) / durationSec;
+    std::cout << "[REWRITE] [OS Cache] Перезаписано " << (TOTAL_SIZE / (1024 * 1024)) << " МБ за "
+              << durationSec << " сек. ("
+              << throughputMBs << " МБ/с)" << std::endl;
+}
+
+void benchmarkNoCacheReWrite(const std::string &filename) {
+#ifdef _WIN32
+    // Создаем файл и записываем начальные данные
+    {
+        HANDLE hFile = CreateFileA(filename.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                                   FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
+        char *buffer = reinterpret_cast<char*>(_aligned_malloc(BLOCK_SIZE, BLOCK_SIZE));
+        memset(buffer, 'B', BLOCK_SIZE);
+
+        DWORD bytesWritten;
+        for (size_t i = 0; i < NUM_BLOCKS; ++i) {
+            WriteFile(hFile, buffer, BLOCK_SIZE, &bytesWritten, NULL);
+        }
+
+        _aligned_free(buffer);
+        CloseHandle(hFile);
+    }
+
+    // Перезапись данных
+    HANDLE hFile = CreateFileA(filename.c_str(), GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
+                               FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        std::cerr << "Ошибка CreateFile: " << filename << std::endl;
+        return;
+    }
+
+    char *buffer = reinterpret_cast<char*>(_aligned_malloc(BLOCK_SIZE, BLOCK_SIZE));
+    memset(buffer, 'B', BLOCK_SIZE);
+
+    DWORD bytesWritten;
+    auto start = std::chrono::high_resolution_clock::now();
+    for (size_t i = 0; i < NUM_BLOCKS; ++i) {
+        LARGE_INTEGER pos;
+        pos.QuadPart = i * BLOCK_SIZE;
+        SetFilePointerEx(hFile, pos, NULL, FILE_BEGIN); // Перемещаем указатель
+        if (!WriteFile(hFile, buffer, BLOCK_SIZE, &bytesWritten, NULL) || bytesWritten != BLOCK_SIZE) {
+            std::cerr << "Ошибка WriteFile на блоке " << i << std::endl;
+            break;
+        }
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+
+    _aligned_free(buffer);
+    CloseHandle(hFile);
+
+    double durationSec = std::chrono::duration<double>(end - start).count();
+    double throughputMBs = (TOTAL_SIZE / (1024.0 * 1024.0)) / durationSec;
+    std::cout << "[REWRITE] [No Cache] Перезаписано " << (TOTAL_SIZE / (1024 * 1024)) << " МБ за "
+              << durationSec << " сек. ("
+              << throughputMBs << " МБ/с)" << std::endl;
+#else
+    std::cerr << "NoCache benchmark доступен только на Windows." << std::endl;
+#endif
+}
+
+void benchmarkCustomCacheReWrite(const std::string &filename) {
+    /*// Создаем файл и записываем начальные данные
+    {
+        int fd = lab2_open(filename.c_str());
+        std::vector<char> buffer(BLOCK_SIZE, 'C');
+        for (size_t i = 0; i < NUM_BLOCKS; ++i) {
+            lab2_write(fd, buffer.data(), BLOCK_SIZE);
+        }
+        lab2_close(fd);
+    }
+
+    // Перезапись данных
+    int fd = lab2_open(filename.c_str());
+    if (fd == -1) {
+        std::cerr << "Ошибка lab2_open: " << filename << std::endl;
+        return;
+    }*/
+
+    int fd = lab2_open(filename.c_str());
+    std::vector<char> buf(BLOCK_SIZE, 'C');
+    for (size_t i = 0; i < NUM_BLOCKS; ++i) {
+        lab2_write(fd, buf.data(), BLOCK_SIZE);
+    }
+
+    std::vector<char> buffer(BLOCK_SIZE, 'C');
+    auto start = std::chrono::high_resolution_clock::now();
+    for (size_t i = 0; i < NUM_BLOCKS; ++i) {
+        off_t offset = i * BLOCK_SIZE;
+        lab2_lseek(fd, offset, SEEK_SET); // Перемещаем указатель
+        ssize_t written = lab2_write(fd, buffer.data(), BLOCK_SIZE);
+        if (written != BLOCK_SIZE) {
+            std::cerr << "Ошибка lab2_write на блоке " << i << std::endl;
+            break;
+        }
+    }
+    lab2_close(fd);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    double durationSec = std::chrono::duration<double>(end - start).count();
+    double throughputMBs = (TOTAL_SIZE / (1024.0 * 1024.0)) / durationSec;
+    std::cout << "[REWRITE] [Custom Cache] Перезаписано " << (TOTAL_SIZE / (1024 * 1024)) << " МБ за "
               << durationSec << " сек. ("
               << throughputMBs << " МБ/с)" << std::endl;
 }
@@ -188,17 +325,21 @@ void benchmarkCustomCache(const std::string &filename) {
 int main() {
     SetConsoleOutputCP(CP_UTF8);
 
-    std::cout << "Запуск бенчмарков записи (блок 4КБ, общий объём 100 МБ)" << std::endl;
+    std::cout << "Запуск бенчмарков записи (блок " << BLOCK_SIZE / 1024 << " КБ, общий объём " << TOTAL_SIZE / 1024 / 1024 << " МБ)" << std::endl;
 
     // Файлы для каждого теста
     std::string fileOS = "benchmark_os.dat";
     std::string fileNoCache = "benchmark_nocache.dat";
     std::string fileCustom = "benchmark_custom.dat";
+    std::string fileCustom2 = "benchmark_custom_2.dat";
 
-    benchmarkOSCache(fileOS);
-    benchmarkNoCache(fileNoCache);
-    benchmarkCustomCache(fileCustom);
+    benchmarkOSCacheWrite(fileOS);
+    benchmarkNoCacheWrite(fileNoCache);
+    benchmarkCustomCacheWrite(fileCustom);
+
+    benchmarkOSCacheReWrite(fileOS);
+    benchmarkNoCacheReWrite(fileNoCache);
+    benchmarkCustomCacheReWrite(fileCustom);
 
     return 0;
 }
-
