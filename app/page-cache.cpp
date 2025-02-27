@@ -49,8 +49,8 @@ int lab2_open(const char *path) {
         GENERIC_READ | GENERIC_WRITE, // доступ к чтению/ записи
         0, // режим совместного доступа (тут эксклюзивный)
         NULL, // атрибуты безопасности (тут по умолчанию)
-        OPEN_EXISTING, // открывается, если существует. ошибка, если нет
-        FILE_FLAG_NO_BUFFERING,  // обход кэша ОС
+        CREATE_ALWAYS, // OPEN_EXISTING : открывается, если существует. ошибка, если нет
+        FILE_FLAG_NO_BUFFERING,  // обход кэша ОС // TODO: флаги
         NULL // шаблон файла (тут не используется)
     );
     if (hFile == INVALID_HANDLE_VALUE) {
@@ -179,6 +179,7 @@ ssize_t lab2_read(int fd, void *buf, size_t count) {
 
     // ТУТ ???
     // Копирование данных в буфер
+    // (current_pos - aligned_offset) -- смещение данных внутри блока
     size_t bytes_to_read = std::min(count, static_cast<size_t>(BLOCK_SIZE - (current_pos - aligned_offset)));
     memcpy(buf, block_it->second->data.data() + (current_pos - aligned_offset), bytes_to_read);
     DEBUG_LOG("lab2_read: Прочитано " << bytes_to_read << " байт из блока (fd=" << fd << ", offset=" << aligned_offset << ")");
