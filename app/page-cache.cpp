@@ -13,7 +13,7 @@
 #include <iostream>
 
 #define BLOCK_SIZE 4096       // Размер блока (4 КБ)
-#define CACHE_CAPACITY 256    // Максимальное количество блоков в кэше
+#define CACHE_CAPACITY 256    // Максимальное количество блоков в кэше (1 МБ суммарно)
 
 // Логирование
 #define DEBUG_LOG(message) std::cout << "[DEBUG] " << message << std::endl
@@ -28,6 +28,8 @@ struct CacheBlock {
 
 // Хэш-функция для пары (fd, offset)
 struct PairHash {
+    // метод-оператор, вызывается по умолчанию для объекта при использовании его как функции
+    // функтор (функциональный объект)
     size_t operator()(const std::pair<int, off_t>& p) const {
         return std::hash<int>()(p.first) ^ std::hash<off_t>()(p.second);
     }
@@ -43,13 +45,13 @@ std::mutex cache_mutex;                      // Мьютекс для поток
 int lab2_open(const char *path) {
     DEBUG_LOG("lab2_open: Открытие файла " << path);
     HANDLE hFile = CreateFileA(
-        path,
-        GENERIC_READ | GENERIC_WRITE,
-        0,
-        NULL,
-        OPEN_EXISTING,
-        FILE_FLAG_NO_BUFFERING,  // Обход кэша ОС
-        NULL
+        path, // путь к файлу
+        GENERIC_READ | GENERIC_WRITE, // доступ к чтению/ записи
+        0, // режим совместного доступа (тут эксклюзивный)
+        NULL, // атрибуты безопасности (тут по умолчанию)
+        OPEN_EXISTING, // открывается, если существует. ошибка, если нет
+        FILE_FLAG_NO_BUFFERING,  // обход кэша ОС
+        NULL // шаблон файла (тут не используется)
     );
     if (hFile == INVALID_HANDLE_VALUE) {
         DEBUG_LOG("lab2_open: Ошибка открытия файла " << path);
@@ -57,9 +59,11 @@ int lab2_open(const char *path) {
     }
 
     std::lock_guard<std::mutex> lock(cache_mutex);
+    // HANDLE -> intptr_t -> int
     int fd = static_cast<int>(reinterpret_cast<intptr_t>(hFile));
     open_files[fd] = hFile;
     DEBUG_LOG("lab2_open: Файл открыт, fd=" << fd);
+    // cache_mutex.unlock(); // избыточно (?)
     return fd;
 }
 
@@ -67,7 +71,7 @@ int lab2_open(const char *path) {
 int lab2_close(int fd) {
     DEBUG_LOG("lab2_close: Закрытие файла с fd=" << fd);
     std::lock_guard<std::mutex> lock(cache_mutex);
-    auto it = open_files.find(fd);
+    auto it = open_files.find(fd); // итератор на результат поиска
     if (it == open_files.end()) {
         DEBUG_LOG("lab2_close: Файл с fd=" << fd << " не найден");
         return -1;
@@ -75,12 +79,18 @@ int lab2_close(int fd) {
 
     // Сброс всех "грязных" блоков на диск
     for (auto& pair : blocks_map) {
+        // проверка принадлежности блоков нашему файлу и проверка флага dirty
         if (pair.first.first == fd && pair.second->dirty) {
             DEBUG_LOG("lab2_close: Сброс грязного блока (fd=" << fd << ", offset=" << pair.second->offset << ") на диск");
+            // 64 бита число из windows api
             LARGE_INTEGER pos;
+            // число целиком по QuadPart становится равным offset из CacheBlock
             pos.QuadPart = pair.second->offset;
+            // 1. из итератора берем значение HANDLE, 2. куда смещаемся, 3. куда сохраняем, 4. как смещаемся
             SetFilePointerEx(it->second, pos, NULL, FILE_BEGIN);
+            // сколько записали байт
             DWORD written;
+            // 1. HANDLE, 2. что пишем, 3. сколько пишем, 4. сколько записали, 5. ??? структура для асинхронных операций
             WriteFile(it->second, pair.second->data.data(), BLOCK_SIZE, &written, NULL);
             pair.second->dirty = false;
         }
@@ -89,17 +99,18 @@ int lab2_close(int fd) {
     // Удаление всех блоков, связанных с файлом
     auto block_it = blocks_map.begin();
     while (block_it != blocks_map.end()) {
+        // проверка на файл
         if (block_it->first.first == fd) {
             DEBUG_LOG("lab2_close: Удаление блока (fd=" << fd << ", offset=" << block_it->second->offset << ") из кэша");
-            delete block_it->second;
-            block_it = blocks_map.erase(block_it);
+            delete block_it->second; // освобождается память, выделенная под блок
+            block_it = blocks_map.erase(block_it); // из мэпы удаляется блок, возвращается итератор на следующий
         } else {
             ++block_it;
         }
     }
 
-    CloseHandle(it->second);
-    open_files.erase(it);
+    CloseHandle(it->second); // закрыли файл по HANDLE
+    open_files.erase(it); // удалили файл из списка открытых
     DEBUG_LOG("lab2_close: Файл с fd=" << fd << " успешно закрыт");
     return 0;
 }
@@ -121,6 +132,9 @@ ssize_t lab2_read(int fd, void *buf, size_t count) {
         return -1;
     }
 
+    // BLOCK_SIZE - 1 = 4096 - 1 = 4095 = 0b1111_1111_1111 = 0b0000_0000_0000_0000_0000_1111_1111_1111
+    // ~(...) = 0b1111_1111_1111_1111_1111_0000_0000_0000
+    // зануляем младшие биты
     off_t aligned_offset = current_pos & ~(BLOCK_SIZE - 1);
 
     // Поиск блока в кэше
@@ -271,13 +285,14 @@ off_t lab2_lseek(int fd, off_t offset, int whence) {
 
     LARGE_INTEGER new_pos;
     new_pos.QuadPart = offset;
-    if (!SetFilePointerEx(it->second, new_pos, NULL, whence)) {
-        DEBUG_LOG("lab2_lseek: Ошибка перемещения указателя файла");
+    LARGE_INTEGER result_pos;
+    if (!SetFilePointerEx(it->second, new_pos, &result_pos, whence)) {
+        DEBUG_LOG("lab2_lseek: Ошибка перемещения указателя файла. Код ошибки: " << GetLastError());
         return -1;
     }
 
-    DEBUG_LOG("lab2_lseek: Указатель файла перемещен на позицию " << offset);
-    return offset;
+    DEBUG_LOG("lab2_lseek: Указатель файла перемещен на позицию " << result_pos.QuadPart);
+    return static_cast<off_t>(result_pos.QuadPart);
 }
 
 // Синхронизация данных с диском
