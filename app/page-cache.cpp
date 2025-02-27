@@ -102,7 +102,9 @@ int lab2_close(int fd) {
         // проверка на файл
         if (block_it->first.first == fd) {
             DEBUG_LOG("lab2_close: Удаление блока (fd=" << fd << ", offset=" << block_it->second->offset << ") из кэша");
-            delete block_it->second; // освобождается память, выделенная под блок
+            // с помощью delete освобождается память, выделенная под блок
+            // под блоки выделяется память в куче, но она не освобождается сама по себе
+            delete block_it->second;
             block_it = blocks_map.erase(block_it); // из мэпы удаляется блок, возвращается итератор на следующий
         } else {
             ++block_it;
@@ -126,6 +128,7 @@ ssize_t lab2_read(int fd, void *buf, size_t count) {
     }
 
     // Получаем текущую позицию в файле
+    // что читаем
     off_t current_pos = lab2_lseek(fd, 0, SEEK_CUR);
     if (current_pos == -1) {
         DEBUG_LOG("lab2_read: Ошибка получения текущей позиции файла");
@@ -134,10 +137,11 @@ ssize_t lab2_read(int fd, void *buf, size_t count) {
 
     // BLOCK_SIZE - 1 = 4096 - 1 = 4095 = 0b1111_1111_1111 = 0b0000_0000_0000_0000_0000_1111_1111_1111
     // ~(...) = 0b1111_1111_1111_1111_1111_0000_0000_0000
-    // зануляем младшие биты
+    // зануляем младшие биты. выравниваем, что читать
     off_t aligned_offset = current_pos & ~(BLOCK_SIZE - 1);
 
     // Поиск блока в кэше
+    // создаем пару для поиска (она будет захэширована)
     auto key = std::make_pair(fd, aligned_offset);
     auto block_it = blocks_map.find(key);
     if (block_it == blocks_map.end()) {
@@ -169,7 +173,7 @@ ssize_t lab2_read(int fd, void *buf, size_t count) {
         // Добавление нового блока
         blocks_map[key] = new_block;
         fifo_queue.push(new_block);
-        block_it = blocks_map.find(key);
+        block_it = blocks_map.find(key); // обновили указатель на блок после того, как блок не был найден в кэше
         DEBUG_LOG("lab2_read: Блок (fd=" << fd << ", offset=" << aligned_offset << ") добавлен в кэш");
     }
 
