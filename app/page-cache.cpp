@@ -16,7 +16,7 @@
 #define CACHE_CAPACITY 256    // Максимальное количество блоков в кэше (1 МБ суммарно)
 
 // Логирование
-#define DEBUG_LOG(message) std::cout << "[DEBUG] " << message << std::endl
+#define DEBUG_LOG(message) // std::cout << "[DEBUG] " << message << std::endl
 
 // Структура блока кэша
 struct CacheBlock {
