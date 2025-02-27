@@ -16,7 +16,7 @@
 #define CACHE_CAPACITY 256    // Максимальное количество блоков в кэше (1 МБ суммарно)
 
 // Логирование
-#define DEBUG_LOG(message) // std::cout << "[DEBUG] " << message << std::endl
+#define DEBUG_LOG(message) /*std::cout << "[DEBUG] " << message << std::endl*/
 
 // Структура блока кэша
 struct CacheBlock {
@@ -273,6 +273,11 @@ ssize_t lab2_write(int fd, const void *buf, size_t count) {
     // Запись данных в кэш
     size_t bytes_to_write = std::min(count, static_cast<size_t>(BLOCK_SIZE - (current_pos - aligned_offset)));
     memcpy(block_it->second->data.data() + (current_pos - aligned_offset), buf, bytes_to_write);
+
+    // fix
+    ssize_t written_bytes = bytes_to_write;
+    lab2_lseek(fd, written_bytes, SEEK_CUR);
+
     block_it->second->dirty = true;
     DEBUG_LOG("lab2_write: Записано " << bytes_to_write << " байт в блок (fd=" << fd << ", offset=" << aligned_offset << ")");
 

@@ -167,11 +167,12 @@ void benchmarkCustomCache(const std::string &filename) {
     auto start = std::chrono::high_resolution_clock::now();
     for (size_t i = 0; i < NUM_BLOCKS; ++i) {
         ssize_t written = lab2_write(fd, buffer.data(), BLOCK_SIZE);
-        // TODO: ???
         if (written != BLOCK_SIZE) {
             std::cerr << "Ошибка lab2_write на блоке " << i << std::endl;
             break;
         }
+        // fix
+        lab2_fsync(fd);
     }
     // Если требуется синхронизация данных с диском, можно вызвать lab2_fsync(fd);
     lab2_close(fd);
@@ -187,7 +188,6 @@ void benchmarkCustomCache(const std::string &filename) {
 int main() {
     SetConsoleOutputCP(CP_UTF8);
 
-    // TODO: строка
     std::cout << "Запуск бенчмарков записи (блок 4КБ, общий объём 100 МБ)" << std::endl;
 
     // Файлы для каждого теста
