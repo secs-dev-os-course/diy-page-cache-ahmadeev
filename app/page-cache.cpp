@@ -177,6 +177,7 @@ ssize_t lab2_read(int fd, void *buf, size_t count) {
         DEBUG_LOG("lab2_read: Блок (fd=" << fd << ", offset=" << aligned_offset << ") добавлен в кэш");
     }
 
+    // ТУТ ???
     // Копирование данных в буфер
     size_t bytes_to_read = std::min(count, static_cast<size_t>(BLOCK_SIZE - (current_pos - aligned_offset)));
     memcpy(buf, block_it->second->data.data() + (current_pos - aligned_offset), bytes_to_read);
