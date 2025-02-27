@@ -276,7 +276,7 @@ ssize_t lab2_write(int fd, const void *buf, size_t count) {
 // Перемещение указателя файла
 off_t lab2_lseek(int fd, off_t offset, int whence) {
     DEBUG_LOG("lab2_lseek: Перемещение указателя файла с fd=" << fd << ", offset=" << offset << ", whence=" << whence);
-    std::lock_guard<std::mutex> lock(cache_mutex);
+    // std::lock_guard<std::mutex> lock(cache_mutex); // TODO: иначе это повторный захват мьютекса в функциях read и write
     auto it = open_files.find(fd);
     if (it == open_files.end()) {
         DEBUG_LOG("lab2_lseek: Файл с fd=" << fd << " не найден");
