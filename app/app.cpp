@@ -68,17 +68,20 @@ int main() {
 #include <vector>
 #include <cstring>
 #include <cstdlib>
+#include <cstdio>
 
 #ifdef _WIN32
     #include <windows.h>
     #include <malloc.h> // Для _aligned_malloc и _aligned_free
 #endif
 
+#include <bits/fs_fwd.h>
+
 #include "page-cache.h"
 
 // Размер блока и общий объём данных (100 МБ)
 const size_t BLOCK_SIZE = 4096;                  // 4 КБ
-const size_t TOTAL_SIZE = 10 * 1024 * 1024;       // 1 МБ
+const size_t TOTAL_SIZE = 1024 * 1024 * 1;       // 1 МБ
 const size_t NUM_BLOCKS = TOTAL_SIZE / BLOCK_SIZE;
 
 // Функция для бенчмарка с использованием кэширования ОС (стандартный вывод в файл)
@@ -86,7 +89,7 @@ void benchmarkOSCacheWrite(const std::string &filename) {
     std::vector<char> buffer(BLOCK_SIZE, 'A'); // Заполняем буфер символами 'A'
 
     auto start = std::chrono::high_resolution_clock::now();
-    std::ofstream ofs(filename, std::ios::binary | std::ios::in | std::ios::out);
+    std::ofstream ofs(filename, std::ios::binary);
     if (!ofs) {
         std::cerr << "Ошибка открытия файла: " << filename << std::endl;
         return;
@@ -192,7 +195,7 @@ void benchmarkOSCacheReWrite(const std::string &filename) {
     std::vector<char> buffer(BLOCK_SIZE, 'A'); // Заполняем буфер символами 'A'
 
     // Создаем файл и записываем начальные данные
-    {
+    /*{
         std::ofstream ofs(filename, std::ios::binary | std::ios::in | std::ios::out);
         if (!ofs) {
             std::cerr << "Ошибка открытия файла: " << filename << std::endl;
@@ -206,15 +209,31 @@ void benchmarkOSCacheReWrite(const std::string &filename) {
                 break;
             }
         }
-    }
+        //ofs.close();
+    }*/
 
-    // Перезапись данных
-    auto start = std::chrono::high_resolution_clock::now();
-    std::ofstream ofs(filename, std::ios::binary | std::ios::in | std::ios::out);
+    std::ofstream ofs(filename, std::ios::binary);
     if (!ofs) {
         std::cerr << "Ошибка открытия файла: " << filename << std::endl;
         return;
     }
+
+    for (size_t i = 0; i < NUM_BLOCKS; ++i) {
+        ofs.write(buffer.data(), BLOCK_SIZE);
+        if (!ofs) {
+            std::cerr << "Ошибка записи в файл." << std::endl;
+            break;
+        }
+    }
+    //ofs.close();
+
+    // Перезапись данных
+    auto start = std::chrono::high_resolution_clock::now();
+    // std::ofstream ofs(filename, std::ios::binary);
+    // if (!ofs) {
+    //     std::cerr << "Ошибка открытия файла: " << filename << std::endl;
+    //     return;
+    // }
 
     for (size_t i = 0; i < NUM_BLOCKS; ++i) {
         ofs.write(buffer.data(), BLOCK_SIZE);
@@ -367,9 +386,17 @@ int main() {
     benchmarkNoCacheWrite(fileNoCache);
     benchmarkCustomCacheWrite(fileCustom);
 
+    remove(fileOS.c_str());
+    remove(fileNoCache.c_str());
+    remove(fileCustom.c_str());
+
     benchmarkOSCacheReWrite(fileOS_2);
     benchmarkNoCacheReWrite(fileNoCache_2);
     benchmarkCustomCacheReWrite(fileCustom_2);
+
+    remove(fileOS_2.c_str());
+    remove(fileNoCache_2.c_str());
+    remove(fileCustom_2.c_str());
 
     return 0;
 }

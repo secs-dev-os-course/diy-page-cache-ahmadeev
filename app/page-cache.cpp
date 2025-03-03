@@ -347,6 +347,6 @@ int lab2_fsync(int fd) {
 }
 
 void print_hm() {
-    std::cout << cache_hit << ", " << cache_miss << std::endl;
+    std::cout << "Cache hit: " << cache_hit << ", Cache miss: " << cache_miss << std::endl;
     cache_hit = cache_miss = 0;
 }
