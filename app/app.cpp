@@ -227,6 +227,7 @@ void benchmarkOSCacheReWrite(const std::string &filename) {
     }
     //ofs.close();
 
+    ofs.seekp(0, std::ios::beg);
     // Перезапись данных
     auto start = std::chrono::high_resolution_clock::now();
     // std::ofstream ofs(filename, std::ios::binary);
@@ -380,23 +381,21 @@ int main() {
     std::string fileNoCache_2 = "benchmark_nocache_2.dat";
     std::string fileCustom_2 = "benchmark_custom_2.dat";
 
-    std::string fileCustom2 = "benchmark_custom_2.dat";
+    remove(fileOS_2.c_str());
+    remove(fileNoCache_2.c_str());
+    remove(fileCustom_2.c_str());
 
     benchmarkOSCacheWrite(fileOS);
     benchmarkNoCacheWrite(fileNoCache);
     benchmarkCustomCacheWrite(fileCustom);
 
-    remove(fileOS.c_str());
-    remove(fileNoCache.c_str());
-    remove(fileCustom.c_str());
-
-    benchmarkOSCacheReWrite(fileOS_2);
-    benchmarkNoCacheReWrite(fileNoCache_2);
-    benchmarkCustomCacheReWrite(fileCustom_2);
-
-    remove(fileOS_2.c_str());
-    remove(fileNoCache_2.c_str());
-    remove(fileCustom_2.c_str());
+    // remove(fileOS.c_str());
+    // remove(fileNoCache.c_str());
+    // remove(fileCustom.c_str());
+    //
+    // benchmarkOSCacheReWrite(fileOS_2);
+    // benchmarkNoCacheReWrite(fileNoCache_2);
+    // benchmarkCustomCacheReWrite(fileCustom_2);
 
     return 0;
 }
