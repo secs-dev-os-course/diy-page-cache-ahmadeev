@@ -78,7 +78,7 @@ int main() {
 
 // Размер блока и общий объём данных (100 МБ)
 const size_t BLOCK_SIZE = 4096;                  // 4 КБ
-const size_t TOTAL_SIZE = 100 * 1024 * 1024;       // 100 МБ
+const size_t TOTAL_SIZE = 10 * 1024 * 1024;       // 1 МБ
 const size_t NUM_BLOCKS = TOTAL_SIZE / BLOCK_SIZE;
 
 // Функция для бенчмарка с использованием кэширования ОС (стандартный вывод в файл)
@@ -86,7 +86,7 @@ void benchmarkOSCacheWrite(const std::string &filename) {
     std::vector<char> buffer(BLOCK_SIZE, 'A'); // Заполняем буфер символами 'A'
 
     auto start = std::chrono::high_resolution_clock::now();
-    std::ofstream ofs(filename, std::ios::binary);
+    std::ofstream ofs(filename, std::ios::binary | std::ios::in | std::ios::out);
     if (!ofs) {
         std::cerr << "Ошибка открытия файла: " << filename << std::endl;
         return;
@@ -114,7 +114,7 @@ void benchmarkNoCacheWrite(const std::string &filename) {
 #ifdef _WIN32
     // Открытие файла с флагами для отключения кэширования
     HANDLE hFile = CreateFileA(filename.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
-                               FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
+                               FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
     if (hFile == INVALID_HANDLE_VALUE) {
         std::cerr << "Ошибка CreateFile: " << filename << std::endl;
         return;
@@ -166,6 +166,8 @@ void benchmarkCustomCacheWrite(const std::string &filename) {
 
     auto start = std::chrono::high_resolution_clock::now();
     for (size_t i = 0; i < NUM_BLOCKS; ++i) {
+        off_t offset = i * BLOCK_SIZE;
+        lab2_lseek(fd, offset, SEEK_SET); // Перемещаем указатель
         ssize_t written = lab2_write(fd, buffer.data(), BLOCK_SIZE);
         if (written != BLOCK_SIZE) {
             std::cerr << "Ошибка lab2_write на блоке " << i << std::endl;
@@ -175,6 +177,7 @@ void benchmarkCustomCacheWrite(const std::string &filename) {
         lab2_fsync(fd);
     }
     // можно вызвать lab2_fsync(fd);
+    print_hm();
     lab2_close(fd);
     auto end = std::chrono::high_resolution_clock::now();
 
@@ -190,9 +193,18 @@ void benchmarkOSCacheReWrite(const std::string &filename) {
 
     // Создаем файл и записываем начальные данные
     {
-        std::ofstream ofs(filename, std::ios::binary);
+        std::ofstream ofs(filename, std::ios::binary | std::ios::in | std::ios::out);
+        if (!ofs) {
+            std::cerr << "Ошибка открытия файла: " << filename << std::endl;
+            return;
+        }
+
         for (size_t i = 0; i < NUM_BLOCKS; ++i) {
             ofs.write(buffer.data(), BLOCK_SIZE);
+            if (!ofs) {
+                std::cerr << "Ошибка записи в файл." << std::endl;
+                break;
+            }
         }
     }
 
@@ -205,7 +217,6 @@ void benchmarkOSCacheReWrite(const std::string &filename) {
     }
 
     for (size_t i = 0; i < NUM_BLOCKS; ++i) {
-        ofs.seekp(i * BLOCK_SIZE); // Перемещаем указатель записи
         ofs.write(buffer.data(), BLOCK_SIZE);
         if (!ofs) {
             std::cerr << "Ошибка записи в файл." << std::endl;
@@ -227,13 +238,26 @@ void benchmarkNoCacheReWrite(const std::string &filename) {
     // Создаем файл и записываем начальные данные
     {
         HANDLE hFile = CreateFileA(filename.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
-                                   FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
+                                   FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL); // FILE_ATTRIBUTE_NORMAL |
+        if (hFile == INVALID_HANDLE_VALUE) {
+            std::cerr << "Ошибка CreateFile: " << filename << std::endl;
+            return;
+        }
+
         char *buffer = reinterpret_cast<char*>(_aligned_malloc(BLOCK_SIZE, BLOCK_SIZE));
+        if (!buffer) {
+            std::cerr << "Ошибка выделения выровненной памяти." << std::endl;
+            CloseHandle(hFile);
+            return;
+        }
         memset(buffer, 'B', BLOCK_SIZE);
 
-        DWORD bytesWritten;
+        DWORD bytesWritten = 0;
         for (size_t i = 0; i < NUM_BLOCKS; ++i) {
-            WriteFile(hFile, buffer, BLOCK_SIZE, &bytesWritten, NULL);
+            if (!WriteFile(hFile, buffer, BLOCK_SIZE, &bytesWritten, NULL) || bytesWritten != BLOCK_SIZE) {
+                std::cerr << "Ошибка WriteFile на блоке " << i << std::endl;
+                break;
+            }
         }
 
         _aligned_free(buffer);
@@ -242,21 +266,23 @@ void benchmarkNoCacheReWrite(const std::string &filename) {
 
     // Перезапись данных
     HANDLE hFile = CreateFileA(filename.c_str(), GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
-                               FILE_ATTRIBUTE_NORMAL | FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
+                               FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
     if (hFile == INVALID_HANDLE_VALUE) {
         std::cerr << "Ошибка CreateFile: " << filename << std::endl;
         return;
     }
 
     char *buffer = reinterpret_cast<char*>(_aligned_malloc(BLOCK_SIZE, BLOCK_SIZE));
+    if (!buffer) {
+        std::cerr << "Ошибка выделения выровненной памяти." << std::endl;
+        CloseHandle(hFile);
+        return;
+    }
     memset(buffer, 'B', BLOCK_SIZE);
 
-    DWORD bytesWritten;
+    DWORD bytesWritten = 0;
     auto start = std::chrono::high_resolution_clock::now();
     for (size_t i = 0; i < NUM_BLOCKS; ++i) {
-        LARGE_INTEGER pos;
-        pos.QuadPart = i * BLOCK_SIZE;
-        SetFilePointerEx(hFile, pos, NULL, FILE_BEGIN); // Перемещаем указатель
         if (!WriteFile(hFile, buffer, BLOCK_SIZE, &bytesWritten, NULL) || bytesWritten != BLOCK_SIZE) {
             std::cerr << "Ошибка WriteFile на блоке " << i << std::endl;
             break;
@@ -278,30 +304,27 @@ void benchmarkNoCacheReWrite(const std::string &filename) {
 }
 
 void benchmarkCustomCacheReWrite(const std::string &filename) {
-    /*// Создаем файл и записываем начальные данные
-    {
-        int fd = lab2_open(filename.c_str());
-        std::vector<char> buffer(BLOCK_SIZE, 'C');
-        for (size_t i = 0; i < NUM_BLOCKS; ++i) {
-            lab2_write(fd, buffer.data(), BLOCK_SIZE);
-        }
-        lab2_close(fd);
-    }
-
-    // Перезапись данных
     int fd = lab2_open(filename.c_str());
     if (fd == -1) {
         std::cerr << "Ошибка lab2_open: " << filename << std::endl;
         return;
-    }*/
-
-    int fd = lab2_open(filename.c_str());
-    std::vector<char> buf(BLOCK_SIZE, 'C');
-    for (size_t i = 0; i < NUM_BLOCKS; ++i) {
-        lab2_write(fd, buf.data(), BLOCK_SIZE);
     }
 
     std::vector<char> buffer(BLOCK_SIZE, 'C');
+
+    for (size_t i = 0; i < NUM_BLOCKS; ++i) {
+        off_t offset = i * BLOCK_SIZE;
+        lab2_lseek(fd, offset, SEEK_SET); // Перемещаем указатель
+        ssize_t written = lab2_write(fd, buffer.data(), BLOCK_SIZE);
+        if (written != BLOCK_SIZE) {
+            std::cerr << "Ошибка lab2_write на блоке " << i << std::endl;
+            break;
+        }
+        // fix
+        lab2_fsync(fd);
+    }
+    print_hm();
+
     auto start = std::chrono::high_resolution_clock::now();
     for (size_t i = 0; i < NUM_BLOCKS; ++i) {
         off_t offset = i * BLOCK_SIZE;
@@ -311,7 +334,10 @@ void benchmarkCustomCacheReWrite(const std::string &filename) {
             std::cerr << "Ошибка lab2_write на блоке " << i << std::endl;
             break;
         }
+        // fix
+        lab2_fsync(fd);
     }
+    print_hm();
     lab2_close(fd);
     auto end = std::chrono::high_resolution_clock::now();
 
@@ -331,15 +357,19 @@ int main() {
     std::string fileOS = "benchmark_os.dat";
     std::string fileNoCache = "benchmark_nocache.dat";
     std::string fileCustom = "benchmark_custom.dat";
+    std::string fileOS_2 = "benchmark_os_2.dat";
+    std::string fileNoCache_2 = "benchmark_nocache_2.dat";
+    std::string fileCustom_2 = "benchmark_custom_2.dat";
+
     std::string fileCustom2 = "benchmark_custom_2.dat";
 
     benchmarkOSCacheWrite(fileOS);
     benchmarkNoCacheWrite(fileNoCache);
     benchmarkCustomCacheWrite(fileCustom);
 
-    benchmarkOSCacheReWrite(fileOS);
-    benchmarkNoCacheReWrite(fileNoCache);
-    benchmarkCustomCacheReWrite(fileCustom);
+    benchmarkOSCacheReWrite(fileOS_2);
+    benchmarkNoCacheReWrite(fileNoCache_2);
+    benchmarkCustomCacheReWrite(fileCustom_2);
 
     return 0;
 }

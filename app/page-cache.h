@@ -53,6 +53,8 @@ extern "C" {
     // Возвращает 0 в случае успеха, -1 в случае ошибки.
     LAB2_API int lab2_fsync(int fd);
 
+    LAB2_API void print_hm();
+
 #ifdef __cplusplus
 }
 #endif

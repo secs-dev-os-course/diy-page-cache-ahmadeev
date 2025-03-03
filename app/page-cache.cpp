@@ -13,7 +13,7 @@
 #include <iostream>
 
 #define BLOCK_SIZE 4096       // Размер блока (4 КБ)
-#define CACHE_CAPACITY 256 * 100  // Максимальное количество блоков в кэше (1 МБ суммарно)
+#define CACHE_CAPACITY 256 * 1  // Максимальное количество блоков в кэше (1 МБ суммарно)
 
 // Логирование
 #define DEBUG_LOG(message) /*std::cout << "[DEBUG] " << message << std::endl*/
@@ -41,6 +41,10 @@ std::queue<CacheBlock*> fifo_queue;          // Очередь для FIFO
 std::unordered_map<std::pair<int, off_t>, CacheBlock*, PairHash> blocks_map; // Быстрый поиск блоков
 std::mutex cache_mutex;                      // Мьютекс для потокобезопасности
 
+int cache_hit = 0;
+int cache_miss = 0;
+std::mutex count_mutex;
+
 // Открытие файла
 int lab2_open(const char *path) {
     DEBUG_LOG("lab2_open: Открытие файла " << path);
@@ -50,7 +54,7 @@ int lab2_open(const char *path) {
         0, // режим совместного доступа (тут эксклюзивный)
         NULL, // атрибуты безопасности (тут по умолчанию)
         CREATE_ALWAYS, // OPEN_EXISTING : открывается, если существует. ошибка, если нет
-        FILE_FLAG_NO_BUFFERING,  // обход кэша ОС // TODO: флаги
+        FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH,  // обход кэша ОС // TODO: флаги
         NULL // шаблон файла (тут не используется)
     );
     if (hFile == INVALID_HANDLE_VALUE) {
@@ -145,6 +149,8 @@ ssize_t lab2_read(int fd, void *buf, size_t count) {
     auto key = std::make_pair(fd, aligned_offset);
     auto block_it = blocks_map.find(key);
     if (block_it == blocks_map.end()) {
+        std::lock_guard<std::mutex> lock(count_mutex);
+        cache_miss++;
         DEBUG_LOG("lab2_read: Блок (fd=" << fd << ", offset=" << aligned_offset << ") не найден в кэше, загрузка с диска");
         CacheBlock* new_block = new CacheBlock{fd, aligned_offset, std::vector<char>(BLOCK_SIZE), false};
         LARGE_INTEGER pos;
@@ -175,9 +181,11 @@ ssize_t lab2_read(int fd, void *buf, size_t count) {
         fifo_queue.push(new_block);
         block_it = blocks_map.find(key); // обновили указатель на блок после того, как блок не был найден в кэше
         DEBUG_LOG("lab2_read: Блок (fd=" << fd << ", offset=" << aligned_offset << ") добавлен в кэш");
+    } else {
+        std::lock_guard<std::mutex> lock(count_mutex);
+        cache_hit++;
     }
 
-    // ТУТ ???
     // Копирование данных в буфер
     // (current_pos - aligned_offset) -- смещение данных внутри блока
     size_t bytes_to_read = std::min(count, static_cast<size_t>(BLOCK_SIZE - (current_pos - aligned_offset)));
@@ -243,6 +251,8 @@ ssize_t lab2_write(int fd, const void *buf, size_t count) {
     auto key = std::make_pair(fd, aligned_offset);
     auto block_it = blocks_map.find(key);
     if (block_it == blocks_map.end()) {
+        std::lock_guard<std::mutex> lock(count_mutex);
+        cache_miss++;
         DEBUG_LOG("lab2_write: Блок (fd=" << fd << ", offset=" << aligned_offset << ") не найден в кэше, создание нового");
         CacheBlock* new_block = new CacheBlock{fd, aligned_offset, std::vector<char>(BLOCK_SIZE), false};
 
@@ -268,6 +278,9 @@ ssize_t lab2_write(int fd, const void *buf, size_t count) {
         fifo_queue.push(new_block);
         block_it = blocks_map.find(key);
         DEBUG_LOG("lab2_write: Блок (fd=" << fd << ", offset=" << aligned_offset << ") добавлен в кэш");
+    } else {
+        std::lock_guard<std::mutex> lock(count_mutex);
+        cache_hit++;
     }
 
     // Запись данных в кэш
@@ -331,4 +344,9 @@ int lab2_fsync(int fd) {
 
     DEBUG_LOG("lab2_fsync: Синхронизация завершена для файла с fd=" << fd);
     return 0;
+}
+
+void print_hm() {
+    std::cout << cache_hit << ", " << cache_miss << std::endl;
+    cache_hit = cache_miss = 0;
 }
