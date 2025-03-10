@@ -21,7 +21,7 @@
 
 // Размер блока и общий объём данных (100 МБ)
 const size_t BLOCK_SIZE = 4096;                  // 4 КБ
-const size_t TOTAL_SIZE = (1024 * 4) * 512;       // 1 МБ = 1024 * 1024 * 1
+const size_t TOTAL_SIZE = (1024 * 4) * 1024 * 25;       // 1 МБ = 1024 * 1024 * 1
 const size_t NUM_BLOCKS = TOTAL_SIZE / BLOCK_SIZE;
 
 // Функция для бенчмарка с использованием кэширования ОС (стандартный вывод в файл)
@@ -284,8 +284,10 @@ std::array<double, 2> benchmarkCustomCacheReWrite(const std::string &filename) {
             break;
         }
         // fix
-        lab2_fsync(fd);
+        // lab2_fsync(fd);
     }
+    // fix
+    lab2_fsync(fd);
     // вывод hit-miss
     // print_hm();
 
@@ -299,8 +301,10 @@ std::array<double, 2> benchmarkCustomCacheReWrite(const std::string &filename) {
             break;
         }
         // fix
-        lab2_fsync(fd);
+        // lab2_fsync(fd);
     }
+    // fix
+    lab2_fsync(fd);
     // вывод hit-miss
     // print_hm();
     lab2_close(fd);
